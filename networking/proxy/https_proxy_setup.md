@@ -16,6 +16,8 @@ While HTTPS request can be sent via HTTP proxy, this is almost never done becaus
 
 ### Install MITMProxy
 
+> MITM 7+ supports https as proxy protocol now: [Secure Web Proxy (TLS-over-TLS)](https://mitmproxy.org/posts/releases/mitmproxy7/)
+
 URL for downloads: https://mitmproxy.org/downloads/#
 
 Certficiate is generated at `~/.mitmproxy/mitmproxy-ca-cert.pem`
@@ -56,7 +58,7 @@ mitmproxy -p 80
 Test the proxy
 
 ```sh
-kubo@jumper:~$ curl --proxy https://127.0.0.1:80 --cacert ~/.mitmproxy/mitmproxy-ca-cert.pem https://githubstatus.com
+kubo@jumper:~$ curl --proxy http://10.206.98.187:80 --cacert ~/.mitmproxy/mitmproxy-ca-cert.pem https://githubstatus.com
 <html>
   <head>
     <meta http-equiv="refresh" content="0;url=https://www.githubstatus.com/">
