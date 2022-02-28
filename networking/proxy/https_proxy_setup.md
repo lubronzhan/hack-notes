@@ -96,4 +96,113 @@ cp mitmproxy.pem /etc/ssl/certs/
 
 ### Make pod or container trust the cert
 
-TODO
+* Add proxy env to the pod
+
+```yaml
+        env:
+        - name: "HTTP_PROXY"
+          value: http://10.83.3.29:80
+        - name: "HTTPS_PROXY"
+          value: http://10.83.3.29:80
+        - name: "NO_PROXY"
+          value: ""
+```
+
+* Spin up a dev [pod](https://raw.githubusercontent.com/lubronzhan/k8s-networking-debug-tools/main/manifest/dnstools-daemonset.yaml):
+
+
+* Ssh into the pod and try curl google, got error. This is because the pod also needs to trust the proxy cert
+
+```sh
+$ curl https://google.com -v
+
+* Rebuilt URL to: https://google.com/
+* Uses proxy env variable HTTPS_PROXY == 'http://10.83.3.29:80'
+*   Trying 10.83.3.29...
+...
+curl: (60) SSL certificate problem: self signed certificate in certificate chain
+More details here: https://curl.haxx.se/docs/sslcerts.html
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the web page mentioned above.
+```
+
+* You can either change the program to load the CA from a path, change dockerfile to read it.
+
+"Or you can mount the pod through a configMap" <---- turns out only adding the cert to the `/etc/ssl/certs` doesn't work.
+Because you also need to append the cert to the `ca-certificate.crt`
+
+In this example, we mount the cert through configMap.
+
+```sh
+kubectl create configmap ca-pemstore --from-file=my-cert.pem
+```
+
+* Change pod spec
+
+```yaml
+        volumeMounts:
+        - name: ca-pemstore
+          mountPath: /etc/ssl/certs/my-cert.pem
+          subPath: my-cert.pem
+          readOnly: false
+      volumes:
+      - name: ca-pemstore
+        configMap:
+          name: ca-pemstore
+
+```
+
+* Ssh into pod and find the file `/etc/ssl/certs/my-cert.pem`
+
+* curl still fail
+
+```sh
+dnstools# curl https://google.com
+curl: (60) SSL certificate problem: self signed certificate in certificate chain
+More details here: https://curl.haxx.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the web page mentioned above.
+
+```
+
+* but if you change the `ca-certificate.crt` as well
+
+```sh
+cat /etc/ssl/certs/ca-cert-my-cert.pem.pem  >> /etc/ssl/certs/ca-certificates.crt
+```
+
+* Now it works
+```sh
+dnstools# curl https://google.com
+<HTML><HEAD><meta http-equiv="content-type" content="text/html;charset=utf-8">
+<TITLE>301 Moved</TITLE></HEAD><BODY>
+<H1>301 Moved</H1>
+The document has moved
+<A HREF="https://www.google.com/">here</A>.
+</BODY></HTML>
+```
+
+
+## Related reading:
+
+`update-ca-certificates` does more than just add a file, but also modifies ca-certificates.crt
+
+https://www.unix.com/man-page/linux/8/update-ca-certificates/
+
+
+>       update-ca-certificates  is  a  program that updates the directory /etc/ssl/certs to hold SSL certificates and generates certificates.crt, a
+>
+>       concatenated single-file list of certificates.
+>
+>       It reads the file /etc/ca-certificates.conf. Each line gives a pathname of a CA certificate under /usr/share/ca-certificates that should be
+>       trusted.  Lines that begin with "#" are comment lines and thus ignored.	Lines that begin with "!" are deselected, causing the deactivation
+>       of the CA certificate in question.
+>
+>       Furthermore all certificates found below /usr/local/share/ca-certificates are also included as implicitly trusted.
+>
+>       Before terminating, update-ca-certificates invokes run-parts on /etc/ca-certificates/update.d and calls each hook with a list  of  certifi-
+>       cates: those added are prefixed with a +, those removed are prefixed with a -.
+>
