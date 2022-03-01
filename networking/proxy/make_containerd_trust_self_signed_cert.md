@@ -4,9 +4,10 @@
 
 Sometimes we need containerd to trust certificate, for example for private registry, or for proxy.
 
-In kubernetes cluster, we can use daemonset to mount the cert to containerd config path.
+To configure containerd with proxy with cert, need two changes
 
-For container 1.5 [(release-note)](https://github.com/containerd/containerd/releases/tag/v1.5.0), update under the directory of host configuration ***doesn't require restarting the containerd daemon***
+1. Update containerd system conf with proxy environment variable, reload and restart containerd
+2. Update containerd `/etc/containerd/config.toml` with certificate, restart containerd
 
 https://github.com/kubernetes-sigs/kind/issues/688#issuecomment-508782438
 
@@ -47,7 +48,7 @@ FATA[0000] pulling image: rpc error: code = Unknown desc = failed to pull and un
 * Add the cert to containerd config
 
 ```sh
-## proxy cert is on mitm-ca-cert.pem
+## proxy cert is in /home/capv/mitm-ca-cert.pem
 cat <<EOF >/etc/containerd/config.toml
 [plugins."io.containerd.grpc.v1.cri".registry.configs."registry-1.docker.io".tls]
   ca = /home/capv/mitm-ca-cert.pem
@@ -67,3 +68,33 @@ DEBU[0000] PullImageRequest: &PullImageRequest{Image:&ImageSpec{Image:nginx,Anno
 DEBU[0001] PullImageResponse: &PullImageResponse{ImageRef:sha256:c316d5a335a5cf324b0dc83b3da82d7608724769f6454f6d9a621f3ec2534a5a,}
 Image is up to date for sha256:c316d5a335a5cf324b0dc83b3da82d7608724769f6454f6d9a621f3ec2534a5a
 ```
+
+## In addition
+
+For container 1.5 [(release-note)](https://github.com/containerd/containerd/releases/tag/v1.5.0), update under the directory of host configuration ***doesn't require restarting the containerd daemon***
+
+But still...
+
+Inserting below config to `/etc/containerd/config.toml` still requires restarting containerd daemon
+
+```sh
+[plugins."io.containerd.grpc.v1.cri".registry]
+   config_path = "/etc/containerd/certs.d"
+```
+
+Then later on, create folder like
+
+```sh
+mkdir -p /etc/containerd/certs.d/docker.io/
+touch /etc/containerd/certs.d/docker.io/hosts.toml
+
+cat <<EOF >/etc/containerd/certs.d/docker.io/hosts.toml
+server = "https://docker.io"
+
+[host."https://registry-1.docker.io"]
+  capabilities = ["pull", "resolve"]
+  ca = "/home/capv/mitm-ca-cert.pem"
+EOF
+```
+
+Then you don't have to restart the containerd daemon
